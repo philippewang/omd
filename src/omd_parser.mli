@@ -20,6 +20,7 @@ and l = Omd_representation.tok list
 
 and main_loop =
   ?html:bool ->
+  ?tryxml:bool ->
   r -> (* accumulator (beware, reversed tokens) *)
   p -> (* info: previous elements *)
   l -> (* tokens to parse *)
@@ -366,8 +367,8 @@ sig
   *)
 
 
-  val main_loop_rev : ?html:bool -> r -> p -> l -> r
-  val main_loop : ?html:bool -> r -> p -> l -> Omd_representation.t
+  val main_loop_rev : ?html:bool -> ?tryxml:bool -> r -> p -> l -> r
+  val main_loop : ?html:bool -> ?tryxml:bool -> r -> p -> l -> Omd_representation.t
   val main_parse : Omd_representation.tok list -> Omd_representation.t
   val parse : Omd_representation.tok list -> Omd_representation.t
 

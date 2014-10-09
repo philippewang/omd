@@ -23,6 +23,7 @@ and l = Omd_representation.tok list
 
 and main_loop =
   ?html:bool ->
+  ?tryxml:bool ->
   r -> (* accumulator (beware, reversed tokens) *)
   p -> (* info: previous elements *)
   l -> (* tokens to parse *)
@@ -2786,13 +2787,13 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
 
   exception Orphan_closing of string * l * l
 
-  let rec main_loop_rev ?(html=false) (r:r) (previous:p) (lexemes:l) =
-    let main_loop_rev ?(html=html) r p l =
+  let rec main_loop_rev ?(html=false) ?(tryxml=true) (r:r) (previous:p) (lexemes:l) =
+    let main_loop_rev ?(html=html) ?(tryxml=tryxml) r p l =
       if debug then eprintf "(OMD) main_loop_rev html=%b\n%!" html;
-      main_loop_rev ~html r p l
-    and main_loop ?(html=html) r p l =
+      main_loop_rev ~html ~tryxml r p l
+    and main_loop ?(html=html) ?(tryxml=tryxml) r p l =
       if debug then eprintf "(OMD) main_loop html=%b\n%!" html;
-      main_loop ~html r p l
+      main_loop ~html ~tryxml r p l
     in
     assert_well_formed lexemes;
     if debug then
@@ -3424,8 +3425,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
                 | T.Open t :: _ when StringSet.mem t html_void_elements ->
                   Some(body, tokens)
                 | _ ->
-                  if debug then
-                    eprintf "(OMD) 3401 BHTML Not enough to read\n%!";
+                  if debug then eprintf "(OMD) 3401 BHTML Not enough to read\n%!";
                   None
               end
             | Lessthans n::tokens ->
@@ -4126,6 +4126,25 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
         end
     (* / end of inline HTML. *)
 
+    (* XML *)
+    | ([] | [Newline|Newlines _|Tag("HTMLBLOCK", _)]),
+      Lessthan::(Word _::(Colon|Colons _|At|Ats _|Bar|Bars _|Caret|Carets _
+                         |Comma|Commas _|Dollar|Dollars _|Dot|Dots _
+                         |Exclamation|Exclamations _|Equal|Equals _
+                         |Hash|Hashs _|Minus|Minuss _|Number _
+                         |Percent|Percents _|Plus|Pluss _|Question| Questions _
+                         |Semicolon|Semicolons _|Star|Stars _|Tilde|Tildes _
+                         |Underscore|Underscores _|Word _|Tag _)::_ as l)
+      when tryxml && false ->
+      begin
+        let try_xml l =
+          assert false
+        in
+        match try_xml lexemes with
+        | Some (r, p, l) -> main_loop_rev r p l
+        | None -> main_loop_rev (Text("<")::r) [Lessthan] l
+      end
+
     (* < : emails *)
     | _, (Lessthan as t)::tl ->
       begin match maybe_autoemail r previous lexemes with
@@ -4327,9 +4346,9 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
 
-  and main_loop ?(html=false) (r:r) (previous:p) (lexemes:l) =
+  and main_loop ?(html=false) ?(tryxml=true) (r:r) (previous:p) (lexemes:l) =
     assert_well_formed lexemes;
-    List.rev (main_loop_rev ~html:html r previous lexemes)
+    List.rev (main_loop_rev ~html:html ~tryxml:true r previous lexemes)
 
   let main_parse lexemes =
     main_loop [] [] (tag_setext main_loop lexemes)
