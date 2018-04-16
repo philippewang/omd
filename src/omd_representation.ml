@@ -191,86 +191,91 @@ and loose_compare_lists l1 l2 =
     | _ -> -1
 
 
-type tok = (* Cs(n) means (n+2) times C *)
-| Ampersand
-| Ampersands of int
-| At
-| Ats of int
-| Backquote
-| Backquotes of int
-| Backslash
-| Backslashs of int
-| Bar
-| Bars of int
-| Caret
-| Carets of int
-| Cbrace
-| Cbraces of int
-| Colon
-| Colons of int
-| Comma
-| Commas of int
-| Cparenthesis
-| Cparenthesiss of int
-| Cbracket
-| Cbrackets of int
-| Dollar
-| Dollars of int
-| Dot
-| Dots of int
-| Doublequote
-| Doublequotes of int
-| Exclamation
-| Exclamations of int
-| Equal
-| Equals of int
-| Greaterthan
-| Greaterthans of int
-| Hash
-| Hashs of int
-| Lessthan
-| Lessthans of int
-| Minus
-| Minuss of int
-| Newline
-| Newlines of int
-| Number of string
-| Obrace
-| Obraces of int
-| Oparenthesis
-| Oparenthesiss of int
-| Obracket
-| Obrackets of int
-| Percent
-| Percents of int
-| Plus
-| Pluss of int
-| Question
-| Questions of int
-| Quote
-| Quotes of int
-| Semicolon
-| Semicolons of int
-| Slash
-| Slashs of int
-| Space
-| Spaces of int
-| Star
-| Stars of int
-| Tab
-| Tabs of int
-| Tilde
-| Tildes of int
-| Underscore
-| Underscores of int
-| Word of string
-| Tag of name * extension
+type tok =
+  | Number of string
+  | Word of string
+  | Tag of name * extension
+  | C of at * int
+and at =
+  | Ampersand (* & *)
+  | At (* @ *)
+  | Backquote (* ` *)
+  | Backslash (* \\ *)
+  | Bar (* | *)
+  | Caret (* ^ *)
+  | Cbrace (* } *)
+  | Colon (* : *)
+  | Comma (* , *)
+  | Cparenthesis (* ) *)
+  | Cbracket (* ] *)
+  | Dollar (* $ *)
+  | Dot (* . *)
+  | Doublequote (* \034 *)
+  | Exclamation (* ! *)
+  | Equal (* = *)
+  | Greaterthan (* > *)
+  | Hash (* # *)
+  | Lessthan (* < *)
+  | Minus (* - *)
+  | Newline (* \n *)
+  | Obrace (* { *)
+  | Oparenthesis (* ( *)
+  | Obracket (* [ *)
+  | Percent (* % *)
+  | Plus (* + *)
+  | Question (* ? *)
+  | Quote (* ' *)
+  | Semicolon (* ; *)
+  | Slash (* / *)
+  | Space (*  *)
+  | Star (* * *)
+  | Tab (* \t *)
+  | Tilde (* ~ *)
+  | Underscore (* _ *)
 
 and extension = <
   parser_extension :
     t -> tok list -> tok list -> ((t * tok list * tok list) option);
   to_string : string
 >
+
+let char_of_at = function
+  | Ampersand -> '&'
+  | At -> '@'
+  | Backquote -> '`'
+  | Backslash -> '\\'
+  | Bar -> '|'
+  | Caret -> '^'
+  | Cbrace -> '}'
+  | Colon -> ':'
+  | Comma -> ','
+  | Cparenthesis -> ')'
+  | Cbracket -> ']'
+  | Dollar -> '$'
+  | Dot -> '.'
+  | Doublequote -> '\034'
+  | Exclamation -> '!'
+  | Equal -> '='
+  | Greaterthan -> '>'
+  | Hash -> '#'
+  | Lessthan -> '<'
+  | Minus -> '-'
+  | Newline -> '\n'
+  | Obrace -> '{'
+  | Oparenthesis -> '('
+  | Obracket -> '['
+  | Percent -> '%'
+  | Plus -> '+'
+  | Question -> '?'
+  | Quote -> '\''
+  | Semicolon -> ';'
+  | Slash -> '/'
+  | Space -> ' '
+  | Star -> '*'
+  | Tab -> '\t'
+  | Tilde -> '~'
+  | Underscore -> '_'
+
 
 type extensions = extension list
 
@@ -353,12 +358,12 @@ let rec visit f = function
       | Some(l) -> l@visit f tl
       | None -> Paragraph(visit f v)::visit f tl
     end
-  | H1 v as e::tl -> 
+  | H1 v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> H1(visit f v)::visit f tl
     end
-  | H2 v as e::tl -> 
+  | H2 v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> H2(visit f v)::visit f tl
@@ -368,27 +373,27 @@ let rec visit f = function
       | Some(l) -> l@visit f tl
       | None -> H3(visit f v)::visit f tl
     end
-  | H4 v as e::tl -> 
+  | H4 v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> H4(visit f v)::visit f tl
     end
-  | H5 v as e::tl -> 
+  | H5 v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> H5(visit f v)::visit f tl
     end
-  | H6 v as e::tl -> 
+  | H6 v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> H6(visit f v)::visit f tl
     end
-  | Emph v as e::tl -> 
+  | Emph v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> Emph(visit f v)::visit f tl
     end
-  | Bold v as e::tl -> 
+  | Bold v as e::tl ->
     begin match f e with
       | Some(l) -> l@visit f tl
       | None -> Bold(visit f v)::visit f tl
@@ -498,5 +503,3 @@ let rec visit f = function
       | Some(l) -> l@visit f tl
       | None -> NL::visit f tl
     end
-
-
