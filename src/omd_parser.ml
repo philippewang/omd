@@ -359,7 +359,7 @@ struct
           List.rev accu
         else
           match e, remains with
-          | C(Cbracket n), C(Cbracket m)::r when m + 1 = n && tl = r ->
+          | C(Cbracket, n), C(Cbracket, m)::r when m + 1 = n && tl = r ->
             let accu = Word "]" :: accu in
             List.rev accu
           | _ ->
@@ -376,31 +376,22 @@ struct
     if debug then eprintf "(OMD) CALL: Omd_parser.unindent_rev\n%!";
     assert_well_formed lexemes;
     let rec loop accu cl = function
-      | Newlines x::(Space|Spaces _)::Newlines y::tl ->
-        loop accu cl (Newlines(x+y+2)::tl)
-      | Newline::(Space|Spaces _)::Newlines x::tl ->
-        loop accu cl (Newlines(1+x)::tl)
-      | Newlines x::(Space|Spaces _)::Newline::tl ->
-        loop accu cl (Newlines(1+x)::tl)
-      | Newline::(Space|Spaces _)::Newline::tl ->
-        loop accu cl (Newlines(0)::tl)
-
-      | (Newline|Newlines 0 as nl)::(Space|Spaces _ as s)::(
-          (Number _::Dot::(Space|Spaces _)::_)
-        | ((Star|Plus|Minus)::(Space|Spaces _)::_)
+      | C(Newline, x)::C(Space, _)::C(Newline, y)::tl ->
+        loop accu cl (C(Newline, x+y)::tl)
+      | (C(Newline, (1|2)) as nl)::(C(Space, _) as s)::(
+          (Number _::C(Dot, 1)::C(Space, _)::_)
+        | (C((Star|Plus|Minus), 1)::C(Space, _)::_)
           as tl) as l ->
         if n = L.length s then
           loop (nl::cl@accu) [] tl
         else
           (cl@accu), l
-      | (Newline|Newlines 0 as nl)::(Space|Spaces _ as s)::tl ->
+      | (C(Newline, (1|2)) as nl)::(C(Space, _) as s)::tl ->
         let x = L.length s - n in
         loop (nl::cl@accu)
           (if x > 0 then [L.make_space x] else [])
           tl
-      | Newlines(_)::_ as l ->
-        (cl@accu), l
-      | Newline::_ as l ->
+      | C(Newline, _)::_ as l ->
         (cl@accu), l
       | e::tl ->
         loop accu (e::cl) tl
@@ -418,7 +409,7 @@ struct
     List.rev fst, snd
 
   let rec is_blank = function
-    | (Space | Spaces _ | Newline | Newlines _) :: tl ->
+    | C((Space|Newline), _) :: tl ->
       is_blank tl
     | [] -> true
     | _ -> false
@@ -429,32 +420,32 @@ struct
     assert (n>0 && n<4);
     match
       fsplit
-        ~excl:(function Newlines _ :: _ -> true | _ -> false)
+        ~excl:(function C(Newline, n) :: _ -> n > 1 | _ -> false)
         ~f:(function
-            | Backslash::Star::tl ->
-              Continue_with([Star;Backslash],tl)
-            | Backslash::Stars 0::tl ->
-              Continue_with([Star;Backslash],Star::tl)
-            | Backslash::Stars n::tl ->
-              Continue_with([Star;Backslash],Stars(n-1)::tl)
-            | (Backslashs b as x)::Star::tl ->
+            | C(Backslash, 1)::C(Star, 1)::tl ->
+              Continue_with([C(Star, 1);C(Backslash, 1)],tl)
+            | C(Backslash, 1)::C(Star, 2)::tl ->
+              Continue_with([C(Star, 1);C(Backslash, 1)],C(Star, 1)::tl)
+            | C(Backslash, 1)::C(Star, n)::tl ->
+              Continue_with([C(Star, 1);C(Backslash, 1)],C(Star, n-1)::tl)
+            | (C(Backslash, b) as x)::C(Star, 1)::tl ->
               if b mod 2 = 0 then
-                Continue_with([x],Star::tl)
+                Continue_with([x],C(Star, 1)::tl)
               else
-                Continue_with([Star;x],tl)
-            | (Backslashs b as x)::(Stars 0 as s)::tl ->
-              if b mod 2 = 0 then
-                Continue_with([x],s::tl)
-              else
-                Continue_with([Star;x],Star::tl)
-            | (Backslashs b as x)::(Stars n as s)::tl ->
+                Continue_with([C(Star, 1);x],tl)
+            | (C(Backslash, b) as x)::(C(Star, 2) as s)::tl ->
               if b mod 2 = 0 then
                 Continue_with([x],s::tl)
               else
-                Continue_with([Star;x],Stars(n-1)::tl)
-            | (Space|Spaces _ as x)::(Star|Stars _ as s)::tl ->
+                Continue_with([C(Star, 1);x],C(Star, 1)::tl)
+            | (C(Backslash, b) as x)::(C(Star, n) as s)::tl ->
+              if b mod 2 = 0 then
+                Continue_with([x],s::tl)
+              else
+                Continue_with([C(Star, 1);x],C(Star, n-1)::tl)
+            | (C(Space, _) as x)::(C(Star, _) as s)::tl ->
               Continue_with([s;x],tl)
-            | (Star|Stars _ as s)::tl ->
+            | (C(Star, _) as s)::tl ->
               if L.length s = n then
                 Split([],tl)
               else
@@ -473,32 +464,26 @@ struct
     assert (n>0 && n<4);
     match
       fsplit
-        ~excl:(function Newlines _ :: _ -> true | _ -> false)
+        ~excl:(function C(Newline, n) :: _ -> n > 1 | _ -> false)
         ~f:(function
-            | Backslash::Underscore::tl ->
-              Continue_with([Underscore;Backslash],tl)
-            | Backslash::Underscores 0::tl ->
-              Continue_with([Underscore;Backslash],Underscore::tl)
-            | Backslash::Underscores n::tl ->
-              Continue_with([Underscore;Backslash],Underscores(n-1)::tl)
-            | (Backslashs b as x)::Underscore::tl ->
+            | C(Backslash, 1)::C(Underscore, 1)::tl ->
+              Continue_with([C(Underscore, 1);C(Backslash, 1)], tl)
+            | C(Backslash, 1)::C(Underscore, n)::tl ->
+              Continue_with
+                ([C(Underscore, 1);C(Backslash, 1)], C(Underscore, n-1)::tl)
+            | (C(Backslash, b) as x)::C(Underscore, 1)::tl ->
               if b mod 2 = 0 then
-                Continue_with([x],Underscore::tl)
+                Continue_with([x], C(Underscore, 1)::tl)
               else
-                Continue_with([Underscore;x],tl)
-            | (Backslashs b as x)::(Underscores 0 as s)::tl ->
-              if b mod 2 = 0 then
-                Continue_with([x],s::tl)
-              else
-                Continue_with([Underscore;x],Underscore::tl)
-            | (Backslashs b as x)::(Underscores n as s)::tl ->
+                Continue_with([C(Underscore, 1);x], tl)
+            | (C(Backslash, b) as x)::(C(Underscore, n) as s)::tl ->
               if b mod 2 = 0 then
                 Continue_with([x],s::tl)
               else
-                Continue_with([Underscore;x],Underscores(n-1)::tl)
-            | (Space|Spaces _ as x)::(Underscore|Underscores _ as s)::tl ->
+                Continue_with([C(Underscore, 1);x],C(Underscore, n-1)::tl)
+            | (C(Space, _) as x)::(C(Underscore, _) as s)::tl ->
               Continue_with([s;x],tl)
-            | (Underscore|Underscores _ as s)::tl ->
+            | (C(Underscore, _) as s)::tl ->
               if L.length s = n then
                 Split([],tl)
               else
@@ -518,34 +503,28 @@ struct
     assert (n>0 && n<4);
     match
       fsplit
-        ~excl:(function Newlines _ :: _ -> true | _ -> false)
+        ~excl:(function C(Newline, n) :: _ -> n > 1 | _ -> false)
         ~f:(function
-            | Backslash::Underscore::tl ->
-              Continue_with([Underscore;Backslash],tl)
-            | Backslash::Underscores 0::tl ->
-              Continue_with([Underscore;Backslash],Underscore::tl)
-            | Backslash::Underscores n::tl ->
-              Continue_with([Underscore;Backslash],Underscores(n-1)::tl)
-            | (Backslashs b as x)::Underscore::tl ->
+            | C(Backslash, 1)::C(Underscore, 1)::tl ->
+              Continue_with([C(Underscore, 1);C(Backslash, 1)],tl)
+            | C(Backslash, 1)::C(Underscore, n)::tl ->
+              Continue_with
+                ([C(Underscore, 1);C(Backslash, 1)], C(Underscore, n-1)::tl)
+            | (C(Backslash, b) as x)::C(Underscore, 1)::tl ->
               if b mod 2 = 0 then
-                Continue_with([x],Underscore::tl)
+                Continue_with([x], C(Underscore, 1)::tl)
               else
-                Continue_with([Underscore;x],tl)
-            | (Backslashs b as x)::(Underscores 0 as s)::tl ->
-              if b mod 2 = 0 then
-                Continue_with([x],s::tl)
-              else
-                Continue_with([Underscore;x],Underscore::tl)
-            | (Backslashs b as x)::(Underscores n as s)::tl ->
+                Continue_with([C(Underscore, 1);x],tl)
+            | (C(Backslash, b) as x)::(C(Underscore, n) as s)::tl ->
               if b mod 2 = 0 then
                 Continue_with([x],s::tl)
               else
-                Continue_with([Underscore;x],Underscores(n-1)::tl)
-            | (Space|Spaces _ as x)::(Underscore|Underscores _ as s)::tl ->
+                Continue_with([C(Underscore, 1);x],C(Underscore, n-1)::tl)
+            | (C(Space, _) as x)::(C(Underscore, _) as s)::tl ->
               Continue_with([s;x],tl)
-            | (Underscore|Underscores _ as s)::(Word _|Number _ as w):: tl ->
+            | (C(Underscore, _) as s)::(Word _|Number _ as w):: tl ->
               Continue_with([w;s],tl)
-            | (Underscore|Underscores _ as s)::tl ->
+            | (C(Underscore, _) as s)::tl ->
               if L.length s = n then
                 Split([],tl)
               else
@@ -568,7 +547,7 @@ struct
       sm_uemph_or_bold n l
 
   let eat_blank =
-    eat (function |Space|Spaces _|Newline|Newlines _ -> true| _ -> false)
+    eat (function C((Space|Newline), _) -> true| _ -> false)
 
 
   (* used by tag__maybe_h1 and tag__maybe_h2 *)
@@ -585,23 +564,20 @@ struct
       match l with
       | [] ->
         None
-      | (Newline|Newlines _)::_ ->
+      | C(Newline, _)::_ ->
         None
-      | Backslash::Backquote::tl ->
-        detect_balanced_bqs n (Backquote::Backslash::r) tl
-      | Backslash::Backquotes 0::tl ->
-        detect_balanced_bqs n (Backquote::Backslash::r) (Backquote::tl)
-      | Backslash::Backquotes x::tl ->
-        detect_balanced_bqs n (Backquote::Backslash::r) (Backquotes(x-1)::tl)
-      | Backslashs(m) as b::Backquote::tl when m mod 2 = 1 ->
-        detect_balanced_bqs n (Backquote::b::r) tl
-      | Backslashs(m) as b::Backquotes 0::tl when m mod 2 = 1 ->
-        detect_balanced_bqs n (Backquote::b::r) (Backquote::tl)
-      | Backslashs(m) as b::Backquotes x::tl when m mod 2 = 1 ->
-        detect_balanced_bqs n (Backquote::b::r) (Backquotes(x-1)::tl)
-      | (Backquote as b)::tl when n = 1 ->
+      | C(Backslash, 1)::C(Backquote, 1)::tl ->
+        detect_balanced_bqs n (C(Backquote, 1)::C(Backslash, 1)::r) tl
+      | C(Backslash, 1)::C(Backquote, x)::tl ->
+        detect_balanced_bqs n (C(Backquote, 1)::C(Backslash, 1)::r)
+          (C(Backquote, x-1)::tl)
+      | (C(Backslash, m) as b)::C(Backquote, 1)::tl when m mod 2 = 1 ->
+        detect_balanced_bqs n (C(Backquote, 1)::b::r) tl
+      | (C(Backslash, m) as b)::C(Backquote, x)::tl when m mod 2 = 1 ->
+        detect_balanced_bqs n (C(Backquote, 1)::b::r) (C(Backquote, x-1)::tl)
+      | (C(Backquote, 1) as b)::tl when n = 1 ->
         Some(List.rev (b::r), tl)
-      | (Backquotes x as b)::tl when n = x+2 ->
+      | (C(Backquote, x) as b)::tl when n = x+2 ->
         Some(List.rev (b::r), tl)
       | e::tl ->
         detect_balanced_bqs n (e::r) tl
@@ -612,34 +588,30 @@ struct
           None
         else
           Some(List.rev r, [])
-      | Backslash::Backquote::tl ->
-        loop (Backquote::Backslash::r) tl
-      | Backslashs(m) as b::Backquote::tl when m mod 2 = 1 ->
-        loop (Backquote::b::r) tl
-      | Backslash::Backquotes 0::tl ->
-        loop (Backquote::Backslash::r) (Backquote::tl)
-      | Backslash::Backquotes x::tl ->
-        loop (Backquote::Backslash::r) (Backquotes(x-1)::tl)
-      | Backslashs(m) as b::Backquotes 0::tl when m mod 2 = 1 ->
-        loop (Backquote::b::r) (Backquote::tl)
-      | Backslashs(m) as b::Backquotes x::tl when m mod 2 = 1 ->
-        loop (Backquote::b::r) (Backquotes(x-1)::tl)
-      | Backquote::tl ->
+      | C(Backslash, 1)::C(Backquote, 1)::tl ->
+        loop (C(Backquote, 1)::C(Backslash, 1)::r) tl
+      | (C(Backslash, m) as b)::C(Backquote, 1)::tl when m mod 2 = 1 ->
+        loop (C(Backquote, 1)::b::r) tl
+      | C(Backslash, 1)::C(Backquote, x)::tl ->
+        loop (C(Backquote, 1)::C(Backslash, 1)::r) (C(Backquote, x-1)::tl)
+      | (C(Backslash, m) as b)::C(Backquote, x)::tl when m mod 2 = 1 ->
+        loop (C(Backquote, 1)::b::r) (C(Backquote, x-1)::tl)
+      | C(Backquote, 1)::tl ->
         begin match detect_balanced_bqs 1 [] tl with
           | Some(bl,tl) -> loop (bl@r) tl
           | _ -> None
         end
-      | Backquotes(x)::tl ->
+      | C(Backquote, x)::tl ->
         begin match detect_balanced_bqs (x+2) [] tl with
           | Some(bl,tl) -> loop (bl@r) tl
           | _ -> None
         end
-      | Newline::(Equal|Equals _|Minus|Minuss _)::tl ->
+      | C(Newline, 1)::C((Equal|Minus), _)::tl ->
         if r = [] then
           None
         else
           Some(List.rev r, tl)
-      | (Newline|Newlines _)::_ ->
+      | C(Newline, _)::_ ->
         if debug then
           eprintf "(OMD) Omd_parser.setext_title is wrongly used!\n%!";
         None
@@ -647,7 +619,7 @@ struct
         loop (e::r) tl
     in
     if match l with
-      | Lessthan::Word _::_ ->
+      | C(Lessthan, 1)::Word _::_ ->
         begin match main_loop [] [] l with
           | (Html_block _ | Code_block _ | Raw_block _)::_ ->
             true
@@ -675,13 +647,13 @@ struct
         object
           method parser_extension r p l =
             match p with
-            | ([]|[Newline|Newlines _]) ->
+            | ([]|[C(Newline, _)]) ->
               begin match setext_title main_loop l with
                 | None ->
                   None
                 | Some(title, tl) ->
                   let title = H1(main_loop [] [] title) in
-                  Some((title::r), [Newline], tl)
+                  Some((title::r), [C(Newline, 1)], tl)
               end
             | _ ->
               if debug then
@@ -698,13 +670,13 @@ struct
         object
           method parser_extension r p l =
             match p with
-            | ([]|[Newline|Newlines _]) ->
+            | ([]|[C(Newline, _)]) ->
               begin match setext_title main_loop l with
                 | None ->
                   None
                 | Some(title, tl) ->
                   let title = H2(main_loop [] [] title) in
-                  Some((title::r), [Newline], tl)
+                  Some((title::r), [C(Newline, 1)], tl)
               end
             | _ ->
               if debug then
@@ -730,43 +702,43 @@ struct
   let tag_setext main_loop lexemes =
     assert_well_formed lexemes;
     let rec loop pl res = function
-      | [] | [Newline|Newlines _] ->
+      | [] | [C(Newline, _)] ->
         pl@res
-      | (Newline as e1)::(Equal|Equals _ as e2)::tl -> (* might be a H1. *)
+      | (C(Newline, 1) as e1)::(C(Equal, _) as e2)::tl -> (* might be a H1. *)
         begin
           match
             fsplit_rev
               ~f:(function
-                  | (Space|Spaces _|Equal|Equals _)::tl -> Continue
+                  | C((Space|Equal), _)::tl -> Continue
                   | [] -> Split([],[])
                   | _::_ as l -> Split([], l))
               tl
           with
-          | Some(rleft, (([]|(Newline|Newlines _)::_) as right)) ->
+          | Some(rleft, (([]|C(Newline, _)::_) as right)) ->
             loop [] (rleft@(e2::e1::pl@tag__maybe_h1 main_loop::res)) right
           | Some(rleft, right) ->
             loop [] (rleft@(e2::e1::pl@res)) right
           | None ->
             loop [] (e2::e1::pl@res) []
         end
-      | (Newline as e1)::(Minus|Minuss _ as e2)::tl -> (* might be a H2. *)
+      | (C(Newline, 1) as e1)::(C(Minus, _) as e2)::tl -> (* might be a H2. *)
         begin
           match
             fsplit_rev
               ~f:(function
-                  | (Space|Spaces _|Minus|Minuss _)::tl -> Continue
+                  | C((Space|Minus), _)::tl -> Continue
                   | [] -> Split([],[])
                   | _::_ as l -> Split([], l))
               tl
           with
-          | Some(rleft, (([]|(Newline|Newlines _)::_) as right)) ->
+          | Some(rleft, (([]|C(Newline, _)::_) as right)) ->
             loop [] (rleft@(e2::e1::pl@tag__maybe_h2 main_loop::res)) right
           | Some(rleft, right) ->
             loop [] (rleft@(e2::e1::pl@res)) right
           | None ->
             loop [] (e2::e1::pl@res) []
         end
-      | (Newline | Newlines _ as e1)::tl ->
+      | (C(Newline, _) as e1)::tl ->
         loop [] (e1::pl@res) tl
       | e::tl ->
         loop (e::pl) res tl
@@ -777,14 +749,12 @@ struct
   let hr_m l =
     assert_well_formed l;
     let rec loop n = function
-      | ((Newlines _|Newline)::tl) | ([] as tl) ->
+      | C(Newline, _)::tl | ([] as tl) ->
         if n >= 3 then Some tl else None
-      | (Space|Spaces _)::tl ->
+      | C(Space, _)::tl ->
         loop n tl
-      | Minus::tl ->
-        loop (n+1) tl
-      | Minuss x::tl ->
-        loop (x+2+n) tl
+      | C(Minus, x)::tl ->
+        loop (x+n) tl
       | _::_ ->
         None
     in loop 0 l
@@ -792,14 +762,14 @@ struct
   let hr_s l =
     assert_well_formed l;
     let rec loop n = function
-      | ((Newline|Newlines _)::tl) | ([] as tl) ->
+      | (C(Newline, _)::tl) | ([] as tl) ->
         if n >= 3 then Some tl else None
-      | (Space|Spaces _)::tl ->
+      | C(Space, _)::tl ->
         loop n tl
-      | Star::tl ->
+      | C(Star, 1)::tl ->
         loop (n+1) tl
-      | Stars x::tl ->
-        loop (x+2+n) tl
+      | C(Star, x)::tl ->
+        loop (x+n) tl
       | _::_ ->
         None
     in loop 0 l
@@ -814,25 +784,25 @@ struct
     assert_well_formed l;
     let e, tl =
       match l with
-      | (Backquote|Backquotes _ as e)::tl -> e, tl
+      | (C(Backquote, _) as e)::tl -> e, tl
       | _ -> failwith "Omd_parser.bcode is wrongly called"
     in
     let rec code_block accu = function
       | [] ->
         None
-      | Backquote::tl ->
-        if e = Backquote then
+      | C(Backquote, 1)::tl ->
+        if e = C(Backquote, 1) then
           match accu with
-          | Newline::accu ->
+          | C(Newline, 1)::accu ->
             Some(List.rev accu, tl)
           | _ ->
             Some(List.rev accu, tl)
         else
-          code_block (Backquote::accu) tl
-      | (Backquotes n as b)::tl ->
+          code_block (C(Backquote, 1)::accu) tl
+      | (C(Backquote, _) as b)::tl ->
         if e = b then
           match accu with
-          | Newline::accu ->
+          | C(Newline, 1)::accu ->
             Some(List.rev accu, tl)
           | _ ->
             Some(List.rev accu, tl)
@@ -846,29 +816,29 @@ struct
     match code_block [] tl with
     | None -> None
     | Some(cb, l) ->
-      if List.exists (function (Newline|Newlines _) -> true | _ -> false) cb
-      && (match p with []|[Newline|Newlines _] -> true | _ -> false)
-      && (match e with Backquotes n when n > 0 -> true | _ -> false)
+      if List.exists (function C(Newline, _) -> true | _ -> false) cb
+      && (match p with []|[C(Newline, _)] -> true | _ -> false)
+      && (match e with C(Backquote, n) -> n > 2 | _ -> false)
       then
         match cb with
-        | Word lang :: (Space|Spaces _) :: Newline :: tl
-        | Word lang :: Newline :: tl ->
+        | Word lang :: C(Space, _) :: C(Newline, 1) :: tl
+        | Word lang :: C(Newline, 1) :: tl ->
           let code = L.string_of_tokens tl in
-          Some(Code_block(lang, code) :: r, [Backquote], l)
-        | Word lang :: (Space|Spaces _) :: Newlines 0 :: tl
-        | Word lang :: Newlines 0 :: tl ->
-          let code = L.string_of_tokens(Newline::tl) in
-          Some(Code_block(lang, code) :: r, [Backquote], l)
-        | Word lang :: (Space|Spaces _) :: Newlines n :: tl
-        | Word lang :: Newlines n :: tl ->
-          let code = L.string_of_tokens (Newlines(n-1)::tl) in
-          Some(Code_block(lang, code) :: r, [Backquote], l)
-        | Newline :: tl ->
+          Some(Code_block(lang, code) :: r, [C(Backquote, 1)], l)
+        | Word lang :: C(Space, _) :: C(Newline, 2) :: tl
+        | Word lang :: C(Newline, 2) :: tl ->
+          let code = L.string_of_tokens(C(Newline, 1)::tl) in
+          Some(Code_block(lang, code) :: r, [C(Backquote, 1)], l)
+        | Word lang :: C(Space, _) :: C(Newline, n) :: tl
+        | Word lang :: C(Newline, n) :: tl ->
+          let code = L.string_of_tokens (C(Newline, n-1)::tl) in
+          Some(Code_block(lang, code) :: r, [C(Backquote, 1)], l)
+        | C(Newline, 1) :: tl ->
           let code = L.string_of_tokens tl in
-          Some(Code_block(default_lang, code) :: r, [Backquote], l)
+          Some(Code_block(default_lang, code) :: r, [C(Backquote, 1)], l)
         | _ ->
           let code = L.string_of_tokens cb in
-          Some(Code_block(default_lang, code) :: r, [Backquote], l)
+          Some(Code_block(default_lang, code) :: r, [C(Backquote, 1)], l)
       else
         let clean_bcode s =
           let rec loop1 i =
@@ -890,7 +860,7 @@ struct
         let code = L.string_of_tokens cb in
         if debug then
           eprintf "(OMD) clean_bcode %S => %S\n%!" code (clean_bcode code);
-        Some(Code(default_lang, clean_bcode code) :: r, [Backquote], l)
+        Some(Code(default_lang, clean_bcode code) :: r, [C(Backquote, 1)], l)
 
 
   exception NL_exception
@@ -994,22 +964,18 @@ struct
 let read_until_gt ?(bq=false) ?(no_nl=false) l =
      assert_well_formed l;
      let rec loop accu n = function
-      | Backslash :: (Greaterthan as b) :: tl ->
+      | C(Backslash, 1) :: (C(Greaterthan, 1) as b) :: tl ->
         loop (b::accu) n tl
-      | Backslash :: (Greaterthans 0) :: tl ->
-        loop (Greaterthan::accu) n (Greaterthan::tl)
-      | Backslashs 0 :: tl ->
-        loop (Backslash::accu) n tl
-      | Backslashs 1 :: tl ->
-        loop (Backslash::accu) n (Backslash::tl)
-      | Backslashs 2 :: tl ->
-        loop (Backslashs 0::accu) n tl
-      | (Backslashs x) :: tl ->
+      | C(Backslash, 1) :: (C(Greaterthan, 2)) :: tl ->
+        loop (C(Greaterthan, 1)::accu) n (C(Greaterthan, 1)::tl)
+      | C(Backslash, 2) :: tl ->
+        loop (C(Backslash, 1)::accu) n tl
+      | C(Backslash, x) :: tl ->
         if x mod 2 = 0 then
-          loop (Backslashs(x/2-1)::accu) n tl
+          loop (C(Backslash, x/2)::accu) n tl
         else
-          loop (Backslashs(x/2-1)::accu) n (Backslash::tl)
-      | (Backquote|Backquotes _ as e)::tl as l ->
+          loop (C(Backslash, x/2)::accu) n (C(Backslash, 1)::tl)
+      | (C(Backquote, _) as e)::tl as l ->
         if bq then
           match bcode [] [] l with
           | None -> loop (e::accu) n tl
@@ -1019,37 +985,29 @@ let read_until_gt ?(bq=false) ?(no_nl=false) l =
               n
               tl
         else
-         loop (e::accu) n tl
-      | Backslash :: (Lessthan as b) :: tl ->
+          loop (e::accu) n tl
+      | C(Backslash, 1) :: (C(Lessthan, 1) as b) :: tl ->
         loop (b::accu) n tl
-      | Backslash :: (Lessthans 0) :: tl ->
-        loop (Lessthan::accu) n (Lessthan::tl)
-      | Lessthan as e :: tl ->
-        loop (e::accu) (n+1) tl
-      | Lessthans x as e :: tl ->
-        loop (e::accu) (n+x+2) tl
-         | Greaterthan as e :: tl ->
+      | C(Backslash, 1) :: C(Lessthan, 2) :: tl ->
+        loop (C(Lessthan, 1)::accu) n (C(Lessthan, 1)::tl)
+      | C(Lessthan, x) as e :: tl ->
+        loop (e::accu) (n+x) tl
+      | C(Greaterthan, 1) as e :: tl ->
         if n = 0 then
           List.rev accu, tl
         else
           loop (e::accu) (n-1) tl
-      | Greaterthans 0 :: tl ->
+      | C(Greaterthan, x) :: tl ->
         if n = 0 then
-          List.rev accu, Greaterthan::tl
-        else
-          loop (Greaterthan::accu) (n-1) (Greaterthan::tl)
-      | Greaterthans x :: tl ->
-        if n = 0 then
-          List.rev accu, Greaterthans(x-1)::tl
+          List.rev accu, C(Greaterthan, x-1)::tl
         else
           loop
             (match accu with
-             | Greaterthan::accu -> Greaterthans(0)::accu
-             | Greaterthans x::accu -> Greaterthans(x+1)::accu
-             | _ -> Greaterthan::accu)
+             | C(Greaterthan, x)::accu -> C(Greaterthan, x+1)::accu
+             | _ -> C(Greaterthan, 1)::accu)
             (n-1)
-            (Greaterthans(x-1)::tl)
-      | (Newline|Newlines _ as e)::tl ->
+            (C(Greaterthan, x-1)::tl)
+      | (C(Newline, _) as e)::tl ->
         if no_nl then
           raise NL_exception
         else
@@ -1069,22 +1027,22 @@ let read_until_gt ?(bq=false) ?(no_nl=false) l =
 let read_until_lt ?(bq=false) ?(no_nl=false) l =
      assert_well_formed l;
      let rec loop accu n = function
-      | Backslash :: (Lessthan as b) :: tl ->
+      | C(Backslash, 1) :: (C(Lessthan, 1) as b) :: tl ->
         loop (b::accu) n tl
-      | Backslash :: (Lessthans 0) :: tl ->
-        loop (Lessthan::accu) n (Lessthan::tl)
-      | Backslashs 0 :: tl ->
-        loop (Backslash::accu) n tl
-      | Backslashs 1 :: tl ->
-        loop (Backslash::accu) n (Backslash::tl)
-      | Backslashs 2 :: tl ->
-        loop (Backslashs 0::accu) n tl
-      | (Backslashs x) :: tl ->
+      | C(Backslash, 1) :: C(Lessthan, 2) :: tl ->
+        loop (C(Lessthan, 1)::accu) n (C(Lessthan, 1)::tl)
+      | C(Backslash, 2) :: tl ->
+        loop (C(Backslash, 1)::accu) n tl
+      | C(Backslash, 3) :: tl ->
+        loop (C(Backslash, 1)::accu) n (C(Backslash, 1)::tl)
+      | C(Backslash, 4) :: tl ->
+        loop (C(Backslash, 2)::accu) n tl
+      | (C(Backslash, x)) :: tl ->
         if x mod 2 = 0 then
-          loop (Backslashs(x/2-1)::accu) n tl
+          loop (C(Backslash, x/2)::accu) n tl
         else
-          loop (Backslashs(x/2-1)::accu) n (Backslash::tl)
-      | (Backquote|Backquotes _ as e)::tl as l ->
+          loop (C(Backslash, x/2)::accu) n (C(Backslash, 1)::tl)
+      | (C(Backquote, _) as e)::tl as l ->
         if bq then
           match bcode [] [] l with
           | None -> loop (e::accu) n tl
@@ -1094,28 +1052,24 @@ let read_until_lt ?(bq=false) ?(no_nl=false) l =
               n
               tl
         else
-         loop (e::accu) n tl    | Lessthan as e :: tl ->
+          loop (e::accu) n tl
+      | C(Lessthan, 1) as e :: tl ->
         if n = 0 then
           List.rev accu, tl
         else
           loop (e::accu) (n-1) tl
-      | Lessthans 0 :: tl ->
+      | C(Lessthan, x) :: tl ->
         if n = 0 then
-          List.rev accu, Lessthan::tl
-        else
-          loop (Lessthan::accu) (n-1) (Lessthan::tl)
-      | Lessthans x :: tl ->
-        if n = 0 then
-          List.rev accu, Lessthans(x-1)::tl
+          List.rev accu, C(Lessthan, x-1)::tl
         else
           loop
             (match accu with
-             | Lessthan::accu -> Lessthans(0)::accu
-             | Lessthans x::accu -> Lessthans(x+1)::accu
-             | _ -> Lessthan::accu)
+             | C(Lessthan, 1)::accu -> C(Lessthan, 2)::accu
+             | C(Lessthan, x)::accu -> C(Lessthan, x+1)::accu
+             | _ -> C(Lessthan, 1)::accu)
             (n-1)
-            (Lessthans(x-1)::tl)
-      | (Newline|Newlines _ as e)::tl ->
+            (C(Lessthan, x-1)::tl)
+      | (C(Newline, _) as e)::tl ->
         if no_nl then
           raise NL_exception
         else
@@ -1135,22 +1089,22 @@ let read_until_lt ?(bq=false) ?(no_nl=false) l =
 let read_until_cparenth ?(bq=false) ?(no_nl=false) l =
      assert_well_formed l;
      let rec loop accu n = function
-      | Backslash :: (Cparenthesis as b) :: tl ->
+      | C(Backslash, 1) :: (C(Cparenthesis, 1) as b) :: tl ->
         loop (b::accu) n tl
-      | Backslash :: (Cparenthesiss 0) :: tl ->
-        loop (Cparenthesis::accu) n (Cparenthesis::tl)
-      | Backslashs 0 :: tl ->
+      | C(Backslash, 1) :: (C(Cparenthesis, 2)) :: tl ->
+        loop (C(Cparenthesis, 1)::accu) n (C(Cparenthesis, 1)::tl)
+      | C(Backslash, 2) :: tl ->
         loop (Backslash::accu) n tl
-      | Backslashs 1 :: tl ->
-        loop (Backslash::accu) n (Backslash::tl)
-      | Backslashs 2 :: tl ->
-        loop (Backslashs 0::accu) n tl
-      | (Backslashs x) :: tl ->
+      | C(Backslash, 3) :: tl ->
+        loop (C(Backslash, 1)::accu) n (C(Backslash, 1)::tl)
+      | C(Backslash, 4) :: tl ->
+        loop (C(Backslash, 2)::accu) n tl
+      | C(Backslash, x) :: tl ->
         if x mod 2 = 0 then
-          loop (Backslashs(x/2-1)::accu) n tl
+          loop (C(Backslash, x/2)::accu) n tl
         else
-          loop (Backslashs(x/2-1)::accu) n (Backslash::tl)
-      | (Backquote|Backquotes _ as e)::tl as l ->
+          loop (C(Backslash, x/2)::accu) n (C(Backslash, 1)::tl)
+      | (C(Backquote, _) as e)::tl as l ->
         if bq then
           match bcode [] [] l with
           | None -> loop (e::accu) n tl
@@ -1161,36 +1115,36 @@ let read_until_cparenth ?(bq=false) ?(no_nl=false) l =
               tl
         else
          loop (e::accu) n tl
-      | Backslash :: (Oparenthesis as b) :: tl ->
+      | C(Backslash, 1) :: (C(Oparenthesis, 1) as b) :: tl ->
         loop (b::accu) n tl
-      | Backslash :: (Oparenthesiss 0) :: tl ->
-        loop (Oparenthesis::accu) n (Oparenthesis::tl)
-      | Oparenthesis as e :: tl ->
+      | C(Backslash, 1) :: (C(Oparenthesiss, 2)) :: tl ->
+        loop (C(Oparenthesis, 1)::accu) n (C(Oparenthesis, 1)::tl)
+      | C(Oparenthesis, 1) as e :: tl ->
         loop (e::accu) (n+1) tl
-      | Oparenthesiss x as e :: tl ->
-        loop (e::accu) (n+x+2) tl
-         | Cparenthesis as e :: tl ->
+      | C(Oparenthesis, x) as e :: tl ->
+        loop (e::accu) (n+x) tl
+         | C(Cparenthesis, 1) as e :: tl ->
         if n = 0 then
           List.rev accu, tl
         else
           loop (e::accu) (n-1) tl
-      | Cparenthesiss 0 :: tl ->
+      | C(Cparenthesis, 2) :: tl ->
         if n = 0 then
-          List.rev accu, Cparenthesis::tl
+          List.rev accu, C(Cparenthesis, 1)::tl
         else
-          loop (Cparenthesis::accu) (n-1) (Cparenthesis::tl)
+          loop (C(Cparenthesis, 1)::accu) (n-1) (C(Cparenthesis, 1)::tl)
       | Cparenthesiss x :: tl ->
         if n = 0 then
-          List.rev accu, Cparenthesiss(x-1)::tl
+          List.rev accu, C(Cparenthesis, x-1)::tl
         else
           loop
             (match accu with
-             | Cparenthesis::accu -> Cparenthesiss(0)::accu
-             | Cparenthesiss x::accu -> Cparenthesiss(x+1)::accu
-             | _ -> Cparenthesis::accu)
+             | C(Cparenthesis, 1)::accu -> C(Cparenthesis, 2)::accu
+             | C(Cparenthesiss, x)::accu -> C(Cparenthesiss, x+1)::accu
+             | _ -> C(Cparenthesis, 1)::accu)
             (n-1)
-            (Cparenthesiss(x-1)::tl)
-      | (Newline|Newlines _ as e)::tl ->
+            (C(Cparenthesiss, x-1)::tl)
+      | C(Newline, _ as e)::tl ->
         if no_nl then
           raise NL_exception
         else
