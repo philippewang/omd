@@ -2201,7 +2201,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
     in
     match list_items ~p:false [] [] l with
     | rp, l ->
-      rp::r, [Newline], l
+      rp::r, [C(Newline, 1)], l
 
 
 
@@ -2278,7 +2278,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
         match
           icode ~default_lang r [C(Newline, 1)] (L.make_space n :: lexemes)
         with
-        | Some(r,p,l) -> r,p,l
+        | Some(r,p,l) -> r, p,l
         | None ->
           if debug then
             eprintf "(OMD) Omd_parser.icode or \
@@ -2290,36 +2290,35 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
     assert_well_formed lexemes;
     assert (n > 0);
     if n = 1 then
-      (Text " "::r), [Space], lexemes
+      (Text " "::r), [C(Space, 1)], lexemes
     else (
       match lexemes with
-      | Newline :: tl when not html ->
+      | C(Newline, 1) :: tl when not html ->
         if debug then
           eprintf
             "(OMD) 2 or more spaces before a newline, eat the newline\n%!";
-        Br::r, [Spaces(n-2)], tl
-      | Newlines k :: tl when not html ->
+        Br::r, [C(Space, n-2)], tl
+      | C(Newline, k) :: tl when not html ->
         if debug then
           eprintf
             "(OMD) 2 or more spaces before a newline, eat 1 newline";
-        let newlines = if k = 0 then Newline else Newlines(k-1) in
-        Br::r, [Spaces(n-2)], newlines :: tl
+        Br::r, [C(Space, n-2)], C(Newline, k-1) :: tl
       | _ ->
         assert (n>1);
-        (Text (String.make n ' ')::r), [Spaces(n-2)], lexemes
+        (Text (String.make n ' ')::r), [C(Space, n-2)], lexemes
     )
 
 
   let maybe_autoemail r p l =
     assert_well_formed l;
     match l with
-    | Lessthan::tl ->
+    | C(Lessthan, 1)::tl ->
       begin
         match
-          fsplit ~excl:(function (Newline|Newlines _|Space|Spaces _) :: _-> true
+          fsplit ~excl:(function C((Newline|Space), _) :: _-> true
                                | [] -> true
                                | _ -> false)
-            ~f:(function At::tl -> Split([],tl) | _ -> Continue)
+            ~f:(function C(At, 1)::tl -> Split([],tl) | _ -> Continue)
             tl
         with
         | None -> None
@@ -2327,12 +2326,13 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
           match
             fsplit
               ~excl:(function
-                  | (Newline|Newlines _|Space|Spaces _) :: _-> true
+                  | C((Newline|Space), _) :: _-> true
                   | [] -> true
                   | _ -> false)
-              ~f:(function Greaterthan::tl -> Split([],tl)
-                         | Greaterthans 0::tl -> Split([],Greaterthan::tl)
-                         | Greaterthans n::tl -> Split([],Greaterthans(n-1)::tl)
+              ~f:(function C(Greaterthan, 1)::tl ->
+                           Split([],tl)
+                         | C(Greaterthan, n)::tl ->
+                            Split([],C(Greaterthan, n-1)::tl)
                          | _ -> Continue)
               right
           with
@@ -2395,10 +2395,10 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
     (* HTML comments *)
-    | _, (Lessthan as t)::(Exclamation::Minuss 0::c as tl) ->
+    | _, (C(Lessthan, 1) as t)::(C(Exclamation, 1)::C(Minus, 2)::c as tl) ->
       begin
         let f = function
-          | (Minuss _ as m)::(Greaterthan|Greaterthans _ as g)::tl ->
+          | (C(Minuss, _) as m)::(C(Greaterthan, _) as g)::tl ->
             Split([g;m], tl)
           | _ ->
             Continue
@@ -2413,11 +2413,11 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
           end
         | Some (comments, new_tl) ->
           let r = Html_comment(L.string_of_tokens comments) :: r in
-          main_impl_rev ~html r [Newline] new_tl
+          main_impl_rev ~html r [C(Newline, 1)] new_tl
       end
 
     (* email-style quoting / blockquote *)
-    | ([]|[Newline|Newlines _]), Greaterthan::(Space|Spaces _)::_ ->
+    | ([]|[C(Newline, _)]), C(Greaterthan, 1)::C(Space, _)::_ ->
       begin
         match
           emailstyle_quoting main_loop r previous (Newline::lexemes)
@@ -2431,8 +2431,8 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
     (* email-style quoting, with lines starting with spaces! *)
-    | ([]|[Newline|Newlines _]), (Space|Spaces(0|1) as s)
-                                 :: Greaterthan :: (Space|Spaces _)::_ ->
+    | ([]|[C(Newline, _)]), (C(Space, (1|2|3)) as s)
+                            :: C(Greaterthan, 1) :: C(Space, _) :: _ ->
       (* It's 1, 2 or 3 spaces, not more because it wouldn't mean
          quoting anymore but code. *)
       begin
@@ -2456,8 +2456,8 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
     (* minus *)
-    | ([]|[Newline|Newlines _]),
-      (Minus|Minuss _ as t) :: ((Space|Spaces _)::_ as tl) ->
+    | ([]|[C(Newline, _)]),
+      (C(Minus, _) as t) :: (C(Space, _)::_ as tl) ->
       (* maybe hr *)
       begin match hr_m lexemes with
         | None -> (* no hr, so it could be a list *)
@@ -2478,7 +2478,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
         | Some l -> (* hr *)
           main_impl_rev ~html (Hr::r) [Newline] l
       end
-    | ([]|[Newline|Newlines _]), (Minus|Minuss _ as t)::tl ->
+    | ([]|[C(Newline, _)]), (C(Minus, _) as t)::tl ->
       begin match hr_m lexemes with
         | None -> (* no hr, and it's not a list either
                      because it's not followed by spaces *)
@@ -2493,11 +2493,9 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
     (* hashes *)
-    | ([]|[(Newline|Newlines _)]),
-      (Hashs n as t) :: ((Space|Spaces _) :: ttl as tl)
-    | ([]|[(Newline|Newlines _)]),
-      (Hashs n as t) :: (ttl as tl) -> (* hash titles *)
-      if n <= 4 then
+    | ([]|[C(Newline, _)]),
+      (C(Hash, n) as t) :: (ttl as tl) -> (* hash titles *)
+      if n <= 6 then
         match read_title main_loop (n+2) r previous ttl with
         | Some(r, p, l) -> main_impl_rev ~html r p l
         | None ->
@@ -2510,8 +2508,8 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
           | None -> main_impl_rev ~html (Text(L.string_of_token t)::r) [t] tl
           | Some(r, p, l) -> main_impl_rev ~html r p l
         end
-    | ([]|[(Newline|Newlines _)]), Hash :: (Space|Spaces _) :: tl
-    | ([]|[(Newline|Newlines _)]), Hash :: tl -> (* hash titles *)
+    | ([]|[C(Newline, _)]), C(Hash, 1) :: C(Space, _) :: tl
+    | ([]|[C(Newline, _)]), C(Hash, 1) :: tl -> (* hash titles *)
       begin match read_title main_loop 1 r previous tl with
         | Some(r, p, l) -> main_impl_rev ~html r p l
         | None ->
@@ -2520,14 +2518,14 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
                      Omd_parser.main_loop is broken\n%!";
           assert false
       end
-    | _, (Hash|Hashs _ as t) :: tl -> (* hash -- no title *)
+    | _, (C(Hash, _) as t) :: tl -> (* hash -- no title *)
       begin match maybe_extension extensions r previous lexemes with
         | None -> main_impl_rev ~html (Text(L.string_of_token t)::r) [t] tl
         | Some(r, p, l) -> main_impl_rev ~html r p l
       end
 
     (* spaces after a newline: could lead to hr *)
-    | ([]|[Newline|Newlines _]), ((Space|Spaces _) as sp) :: tl ->
+    | ([]|[C(Newline, _)]), (C(Space, _) as sp) :: tl ->
       begin match hr tl with
         | None ->
           (* No [Hr], but maybe [Ul], [Ol], code,... *)
@@ -2540,54 +2538,47 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       end
 
     (* spaces anywhere *)
-    | _, ((Space|Spaces _) as t) :: tl ->
+    | _, (C(Space, _) as t) :: tl ->
       (* too many cases to be handled here *)
       let n = L.length t in
       let r, p, l = spaces_not_at_beginning_of_line ~html n r tl in
       main_impl_rev ~html r p l
 
     (* underscores *)
-    | _, (Underscore as t) :: tl -> (* one "orphan" underscore, or emph *)
-      (match uemph_or_bold 1 tl with
+    | _, (C(Underscore, (2|3 as n)) as t) :: tl ->
+      (* one "orphan" underscore, or emph
+         or 2 or 3 "orphan" underscores, or emph/bold *)
+      (match uemph_or_bold n tl with
        | None ->
          begin match maybe_extension extensions r previous lexemes with
            | None -> main_impl_rev ~html (Text(L.string_of_token t)::r) [t] tl
            | Some(r, p, l) -> main_impl_rev ~html r p l
          end
        | Some(x, new_tl) ->
-         main_impl_rev ~html (Emph(main_impl ~html [] [t] x) :: r) [t] new_tl
-      )
-    | _, (Underscores((0|1) as n) as t) :: tl ->
-      (* 2 or 3 "orphan" underscores, or emph/bold *)
-      (match uemph_or_bold (n+2) tl with
-       | None ->
-         begin match maybe_extension extensions r previous lexemes with
-           | None -> main_impl_rev ~html (Text(L.string_of_token t)::r) [t] tl
-           | Some(r, p, l) -> main_impl_rev ~html r p l
-         end
-       | Some(x, new_tl) ->
-         if n = 0 then (* 1 underscore *)
+         if n = 1 then (* one "orphan" underscore, or emph *)
+           main_impl_rev ~html (Emph(main_impl ~html [] [t] x) :: r) [t] new_tl
+         else if n = 2 then (* 1 underscore *)
            main_impl_rev ~html (Bold(main_impl ~html [] [t] x) :: r) [t] new_tl
          else (* 2 underscores *)
            main_impl_rev ~html (Emph([Bold(main_impl ~html [] [t] x)]) :: r) [t] new_tl
       )
 
     (* enumerated lists *)
-    | ([]|[Newline|Newlines _]), (Number _) :: Dot :: (Space|Spaces _) :: tl ->
+    | ([]|[C(Newline, _)]), (Number _) :: C(Dot, 1) :: C(Space, _) :: tl ->
       let md, new_p, new_l =
         parse_list main_loop r [] lexemes
       in
       main_impl_rev ~html md new_p new_l
 
     (* plus *)
-    | ([]|[(Newline|Newlines _)]), Plus :: (Space|Spaces _) :: _ ->
+    | ([]|[C(Newline, _)]), C(Plus, 1) :: C(Space, _) :: _ ->
       let md, new_p, new_l =
         parse_list main_loop r [] lexemes
       in
       main_impl_rev ~html md new_p new_l
 
     (* stars *)
-    | ([]|[(Newline|Newlines _)]), Star :: (Space|Spaces _) :: _ ->
+    | ([]|[C(Newline, _)]), C(Star, 1) :: C(Space, _) :: _ ->
       (* maybe hr or new list *)
       begin match hr_s lexemes with
         | Some l ->
@@ -2598,16 +2589,16 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
           in
           main_impl_rev ~html md new_p new_l
       end
-    | ([]|[(Newline|Newlines _)]), Stars _ :: _ when hr_s lexemes <> None ->
+    | ([]|[C(Newline, _)]), C(Star, _) :: _ when hr_s lexemes <> None ->
       (* hr *)
       (match hr_s lexemes with
        | Some l -> main_impl_rev ~html (Hr::r) [Newline] l
        | None -> assert false
       )
-    | ([]|[(Newline|Newlines _)]), (Star as t) :: tl -> (* maybe hr *)
+    | ([]|[C(Newline, _)]), (C(Star, 1) as t) :: tl -> (* maybe hr *)
       begin match hr_s lexemes with
         | Some l ->
-          main_impl_rev ~html (Hr::r) [Newline] l
+          main_impl_rev ~html (Hr::r) [C(Newline, 1)] l
         | None ->
           (match semph_or_bold 1 tl with
            | Some(x, new_tl) ->
@@ -2621,7 +2612,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
              end
           )
       end
-    | _, (Star as t) :: tl -> (* one "orphan" star, or emph // can't be hr *)
+    | _, (C(Star, 1) as t) :: tl -> (* one "orphan" star, or emph // can't be hr *)
       (match semph_or_bold 1 tl with
        | Some(x, new_tl) ->
          main_impl_rev ~html (Emph(main_impl ~html [] [t] x) :: r) [t] new_tl
@@ -2631,7 +2622,7 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
            | Some(r, p, l) -> main_impl_rev ~html r p l
          end
       )
-    | _, (Stars((0|1) as n) as t) :: tl ->
+    | _, (C(Star, ((2|3) as n)) as t) :: tl ->
       (* 2 or 3 "orphan" stars, or emph/bold *)
       (match semph_or_bold (n+2) tl with
        | Some(x, new_tl) ->
@@ -2647,17 +2638,17 @@ let read_until_space ?(bq=false) ?(no_nl=false) l =
       )
 
     (* backslashes *)
-    | _, Backslash :: (Newline as t) :: tl -> (* \\n *)
+    | _, C(Backslash, 1) :: (C(Newline, 1) as t) :: tl -> (* \\n *)
       main_impl_rev ~html (Br :: r) [t] tl
-    | _, Backslash :: Newlines 0 :: tl -> (* \\n\n\n\n... *)
-      main_impl_rev ~html (Br :: r) [Backslash; Newline] (Newline :: tl)
-    | _, Backslash :: Newlines n :: tl -> assert (n >= 0); (* \\n\n\n\n... *)
-      main_impl_rev ~html (Br :: r) [Backslash; Newline]
-        (Newlines (n-1) :: tl)
-    | _, Backslash :: (Backquote as t) :: tl -> (* \` *)
+    | _, C(Backslash, 1) :: C(Newline, 2) :: tl -> (* \\n\n\n\n... *)
+      main_impl_rev ~html (Br :: r) [C(Backslash, 1); C(Newline, 1)] (C(Newline, 1) :: tl)
+    | _, C(Backslash, 1) :: C(Newlines, n) :: tl -> assert (n >= 3); (* \\n\n\n\n... *)
+      main_impl_rev ~html (Br :: r) [C(Backslash, 1); C(Newline, 1)]
+        (C(Newlines, n-1) :: tl)
+    | _, C(Backslash, 1) :: (C(Backquote, 1) as t) :: tl -> (* \` *)
       main_impl_rev ~html (Text ("`") :: r) [t] tl
-    | _, Backslash :: Backquotes 0 :: tl -> (* \````... *)
-      main_impl_rev ~html (Text ("`") :: r) [Backslash; Backquote] (Backquote :: tl)
+    | _, C(Backslash, 1) :: C(Backquotes, 2) :: tl -> (* \````... *)
+      main_impl_rev ~html (Text ("`") :: r) [C(Backslash, 1); C(Backquote, 1)] (C(Backquote, 1) :: tl)
     | _, Backslash :: Backquotes n :: tl -> assert (n >= 0); (* \````... *)
       main_impl_rev ~html (Text ("`") :: r) [Backslash; Backquote]
         (Backquotes (n-1) :: tl)
